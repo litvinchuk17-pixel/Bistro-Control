@@ -1,0 +1,7 @@
+edge-tts>=6.1.9
+moviepy>=1.0.3
+Pillow>=10.0.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+imageio>=2.31.0
+imageio-ffmpeg>=0.4.9

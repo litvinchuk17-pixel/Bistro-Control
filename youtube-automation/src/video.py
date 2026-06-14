@@ -82,17 +82,6 @@ def assemble_video(broll_clips: list, audio_path: Path, words: list, output_path
     audio = AudioFileClip(str(audio_path))
     total = audio.duration
 
-    def _ken_burns(clip, zoom_start=1.0, zoom_end=1.08):
-        """Slow zoom-in effect."""
-        return clip.fl_time(lambda t: t).resize(
-            lambda t: zoom_start + (zoom_end - zoom_start) * (t / max(clip.duration, 0.1))
-        ).crop(
-            x_center=TARGET_SIZE[0] / 2,
-            y_center=TARGET_SIZE[1] / 2,
-            width=TARGET_SIZE[0],
-            height=TARGET_SIZE[1],
-        )
-
     bg_clips = []
     current = 0.0
     if broll_clips:
@@ -100,11 +89,20 @@ def assemble_video(broll_clips: list, audio_path: Path, words: list, output_path
         while current < total:
             path = broll_clips[idx % len(broll_clips)]
             try:
-                c = VideoFileClip(str(path)).without_audio().resize(TARGET_SIZE)
+                c = VideoFileClip(str(path)).without_audio()
+                # Resize to fill TARGET_SIZE, preserving aspect ratio
+                w, h = c.size
+                scale = max(TARGET_SIZE[0] / w, TARGET_SIZE[1] / h)
+                c = c.resize((int(w * scale), int(h * scale)))
+                # Center crop to exact target
+                c = c.crop(
+                    x_center=c.w / 2, y_center=c.h / 2,
+                    width=TARGET_SIZE[0], height=TARGET_SIZE[1],
+                )
+                c = c.set_duration(c.duration)  # ensure duration is set
                 remaining = total - current
                 if c.duration > remaining:
                     c = c.subclip(0, remaining)
-                c = _ken_burns(c)
                 bg_clips.append(c.set_start(current))
                 current += c.duration
             except Exception as e:

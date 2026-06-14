@@ -2,6 +2,8 @@ import platform
 import subprocess
 from pathlib import Path
 
+import numpy as np
+
 # moviepy 1.0.3 uses PIL.Image.ANTIALIAS removed in Pillow 10 — patch it
 from PIL import Image as _PILImage
 if not hasattr(_PILImage, "ANTIALIAS"):
@@ -12,7 +14,6 @@ FPS = 30
 
 
 def _detect_codec():
-    """Use h264_videotoolbox on Apple Silicon, libx264 elsewhere."""
     if platform.system() != "Darwin":
         return "libx264"
     try:
@@ -30,13 +31,25 @@ def _detect_codec():
 CODEC = _detect_codec()
 
 
+def _cinematic_filter(frame):
+    """Darken + warm tones for cinematic atmosphere."""
+    img = frame.astype(np.float32)
+    # Darken to 65%
+    img *= 0.65
+    # Warm shift: boost red/green slightly, reduce blue
+    img[:, :, 0] = np.clip(img[:, :, 0] * 1.08, 0, 255)  # red +8%
+    img[:, :, 1] = np.clip(img[:, :, 1] * 1.02, 0, 255)  # green +2%
+    img[:, :, 2] = np.clip(img[:, :, 2] * 0.88, 0, 255)  # blue -12%
+    return img.astype(np.uint8)
+
+
 def _subtitle_clips(words: list, duration: float):
     from moviepy.editor import TextClip
     clips = []
     chunk, chunk_words = [], []
     for w in words:
         chunk_words.append(w)
-        if len(chunk_words) >= 7:
+        if len(chunk_words) >= 6:
             chunk.append(chunk_words)
             chunk_words = []
     if chunk_words:
@@ -55,17 +68,17 @@ def _subtitle_clips(words: list, duration: float):
             tc = (
                 TextClip(
                     text,
-                    fontsize=56,
+                    fontsize=62,
                     color="white",
                     font="DejaVu-Sans-Bold",
                     stroke_color="black",
                     stroke_width=2,
                     method="caption",
-                    size=(1600, None),
+                    size=(1500, None),
                 )
                 .set_start(start)
                 .set_duration(dur)
-                .set_position(("center", 880))
+                .set_position(("center", 860))
             )
             clips.append(tc)
         except Exception:
@@ -90,16 +103,16 @@ def assemble_video(broll_clips: list, audio_path: Path, words: list, output_path
             path = broll_clips[idx % len(broll_clips)]
             try:
                 c = VideoFileClip(str(path)).without_audio()
-                # Resize to fill TARGET_SIZE, preserving aspect ratio
                 w, h = c.size
                 scale = max(TARGET_SIZE[0] / w, TARGET_SIZE[1] / h)
                 c = c.resize((int(w * scale), int(h * scale)))
-                # Center crop to exact target
                 c = c.crop(
                     x_center=c.w / 2, y_center=c.h / 2,
                     width=TARGET_SIZE[0], height=TARGET_SIZE[1],
                 )
-                c = c.set_duration(c.duration)  # ensure duration is set
+                # Apply cinematic filter
+                c = c.fl_image(_cinematic_filter)
+                c = c.set_duration(c.duration)
                 remaining = total - current
                 if c.duration > remaining:
                     c = c.subclip(0, remaining)
@@ -108,7 +121,7 @@ def assemble_video(broll_clips: list, audio_path: Path, words: list, output_path
             except Exception as e:
                 print(f"  Clip load error ({path.name}): {e}")
             idx += 1
-            if idx > 500:  # safety cap
+            if idx > 500:
                 break
 
     if not bg_clips:
@@ -116,13 +129,16 @@ def assemble_video(broll_clips: list, audio_path: Path, words: list, output_path
 
     background = concatenate_videoclips(bg_clips, method="compose").set_audio(audio)
 
+    # Dark overlay for readability (10% black)
+    overlay = ColorClip(TARGET_SIZE, color=(0, 0, 0), duration=total).set_opacity(0.15)
+
     sub_clips = _subtitle_clips(words, total)
-    final = CompositeVideoClip([background] + sub_clips, size=TARGET_SIZE)
+    final = CompositeVideoClip([background, overlay] + sub_clips, size=TARGET_SIZE)
 
     if bgm_path and bgm_path.exists():
         from moviepy.editor import AudioFileClip as AFC
         from moviepy.audio.AudioClip import CompositeAudioClip
-        bgm = AFC(str(bgm_path)).subclip(0, total).volumex(0.07)
+        bgm = AFC(str(bgm_path)).subclip(0, total).volumex(0.08)
         final = final.set_audio(CompositeAudioClip([audio, bgm]))
 
     if CODEC == "h264_videotoolbox":

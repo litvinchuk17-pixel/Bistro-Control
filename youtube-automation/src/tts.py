@@ -1,6 +1,10 @@
-import edge_tts
+import re
+import json
 import asyncio
+import subprocess
 from pathlib import Path
+
+import edge_tts
 
 VOICES = {
     "narrator_male": "en-US-ChristopherNeural",
@@ -11,16 +15,36 @@ VOICES = {
     "female_uk": "en-GB-SoniaNeural",
 }
 
+# Max words per TTS request — edge-tts loses WordBoundary events on very long texts
+_CHUNK_WORDS = 350
 
-async def _generate(text: str, voice: str, audio_path: Path) -> list:
+
+def _split_chunks(text: str) -> list:
+    """Split at sentence boundaries so each chunk ≤ _CHUNK_WORDS words."""
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    chunks, buf, count = [], [], 0
+    for s in sentences:
+        n = len(s.split())
+        if count + n > _CHUNK_WORDS and buf:
+            chunks.append(" ".join(buf))
+            buf, count = [s], n
+        else:
+            buf.append(s)
+            count += n
+    if buf:
+        chunks.append(" ".join(buf))
+    return chunks or [text]
+
+
+async def _generate_chunk(text: str, voice: str, path: Path) -> list:
     words = []
-    communicate = edge_tts.Communicate(text, voice)
-    with open(audio_path, "wb") as f:
-        async for chunk in communicate.stream():
-            ctype = chunk.get("type", "")
-            if ctype == "audio":
+    comm = edge_tts.Communicate(text, voice, rate="-5%")
+    with open(path, "wb") as f:
+        async for chunk in comm.stream():
+            t = chunk.get("type", "")
+            if t == "audio":
                 f.write(chunk["data"])
-            elif ctype == "WordBoundary":
+            elif t == "WordBoundary":
                 words.append({
                     "word": chunk.get("text", ""),
                     "start": chunk.get("offset", 0) / 10_000_000,
@@ -29,47 +53,79 @@ async def _generate(text: str, voice: str, audio_path: Path) -> list:
     return words
 
 
-def _estimate_timing(text: str, audio_duration: float) -> list:
-    """Fallback: distribute words evenly across audio duration."""
-    raw_words = text.split()
-    if not raw_words:
-        return []
-    gap = audio_duration / len(raw_words)
-    result = []
-    for i, w in enumerate(raw_words):
-        result.append({
-            "word": w,
-            "start": i * gap,
-            "duration": gap * 0.85,
-        })
-    return result
+def _duration(path: Path) -> float:
+    r = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", str(path)],
+        capture_output=True, text=True,
+    )
+    try:
+        return float(json.loads(r.stdout)["format"]["duration"])
+    except Exception:
+        return 0.0
 
 
 def generate_speech(text: str, voice_key: str, output_dir: Path):
     voice = VOICES.get(voice_key, VOICES["narrator_male"])
     audio_path = output_dir / "voiceover.mp3"
 
-    words = asyncio.run(_generate(text, voice, audio_path))
+    chunks = _split_chunks(text)
+    print(f"  TTS: {len(chunks)} chunk(s), voice={voice}")
+
+    all_words = []
+    chunk_paths = []
+    offset = 0.0
+
+    for i, chunk_text in enumerate(chunks):
+        cpath = output_dir / f"chunk_{i}.mp3"
+        chunk_paths.append(cpath)
+
+        words = asyncio.run(_generate_chunk(chunk_text, voice, cpath))
+
+        if not cpath.exists():
+            raise RuntimeError(f"TTS failed on chunk {i}")
+
+        dur = _duration(cpath)
+
+        if words:
+            for w in words:
+                all_words.append({
+                    "word": w["word"],
+                    "start": w["start"] + offset,
+                    "duration": w["duration"],
+                })
+        else:
+            # Fallback for this chunk: evenly distribute
+            raw = chunk_text.split()
+            if dur > 0 and raw:
+                gap = dur / len(raw)
+                for j, w in enumerate(raw):
+                    all_words.append({
+                        "word": w,
+                        "start": offset + j * gap,
+                        "duration": gap * 0.85,
+                    })
+
+        offset += dur
+        print(f"    chunk {i+1}/{len(chunks)}: {len(words)} timestamps, {dur:.1f}s")
+
+    # Concatenate chunks
+    if len(chunk_paths) == 1:
+        chunk_paths[0].rename(audio_path)
+    else:
+        list_file = output_dir / "chunks.txt"
+        list_file.write_text(
+            "\n".join(f"file '{p.name}'" for p in chunk_paths)
+        )
+        subprocess.run(
+            ["ffmpeg", "-f", "concat", "-safe", "0",
+             "-i", str(list_file), "-c", "copy", "-y", str(audio_path)],
+            capture_output=True,
+        )
+        list_file.unlink(missing_ok=True)
+        for p in chunk_paths:
+            p.unlink(missing_ok=True)
 
     if not audio_path.exists():
-        raise RuntimeError("TTS failed: voiceover.mp3 was not created")
+        raise RuntimeError("TTS failed: voiceover.mp3 not created")
 
-    if not words:
-        # edge-tts didn't return WordBoundary events — estimate from duration
-        import subprocess, json
-        probe = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json",
-             "-show_format", str(audio_path)],
-            capture_output=True, text=True,
-        )
-        duration = 0.0
-        try:
-            info = json.loads(probe.stdout)
-            duration = float(info["format"]["duration"])
-        except Exception:
-            pass
-        if duration > 0:
-            words = _estimate_timing(text, duration)
-            print(f"  (using estimated subtitle timing, {len(words)} words)")
-
-    return audio_path, words
+    return audio_path, all_words

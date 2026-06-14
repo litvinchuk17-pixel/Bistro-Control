@@ -1,4 +1,5 @@
 import requests
+import subprocess
 from pathlib import Path
 
 
@@ -50,14 +51,32 @@ def _download(url: str, path: Path) -> bool:
         return False
 
 
+def _transcode(src: Path, dst: Path) -> bool:
+    """Re-encode to H.264 yuv420p so moviepy can always open it."""
+    result = subprocess.run(
+        [
+            "ffmpeg", "-i", str(src),
+            "-c:v", "libx264", "-preset", "ultrafast",
+            "-pix_fmt", "yuv420p", "-an",
+            "-y", str(dst),
+        ],
+        capture_output=True,
+        timeout=120,
+    )
+    return result.returncode == 0
+
+
 def fetch_broll(topic: str, script: str, api_key: str, output_dir: Path, count: int = 6) -> list:
     keywords = _keywords(topic, script)
     clips = []
     for i, kw in enumerate(keywords[:3]):
         for j, url in enumerate(_search_videos(kw, api_key, count=2)):
-            dest = output_dir / f"broll_{i}_{j}.mp4"
-            if _download(url, dest):
-                clips.append(dest)
+            raw = output_dir / f"broll_raw_{i}_{j}.mp4"
+            ready = output_dir / f"broll_{i}_{j}.mp4"
+            if _download(url, raw) and _transcode(raw, ready):
+                clips.append(ready)
+                raw.unlink(missing_ok=True)
+                print(f"    clip {len(clips)}: {kw}")
             if len(clips) >= count:
                 return clips
     return clips

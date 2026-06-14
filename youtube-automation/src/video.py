@@ -77,6 +77,17 @@ def assemble_video(broll_clips: list, audio_path: Path, words: list, output_path
     audio = AudioFileClip(str(audio_path))
     total = audio.duration
 
+    def _ken_burns(clip, zoom_start=1.0, zoom_end=1.08):
+        """Slow zoom-in effect."""
+        return clip.fl_time(lambda t: t).resize(
+            lambda t: zoom_start + (zoom_end - zoom_start) * (t / max(clip.duration, 0.1))
+        ).crop(
+            x_center=TARGET_SIZE[0] / 2,
+            y_center=TARGET_SIZE[1] / 2,
+            width=TARGET_SIZE[0],
+            height=TARGET_SIZE[1],
+        )
+
     bg_clips = []
     current = 0.0
     if broll_clips:
@@ -88,10 +99,11 @@ def assemble_video(broll_clips: list, audio_path: Path, words: list, output_path
                 remaining = total - current
                 if c.duration > remaining:
                     c = c.subclip(0, remaining)
+                c = _ken_burns(c)
                 bg_clips.append(c.set_start(current))
                 current += c.duration
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  Clip load error ({path.name}): {e}")
             idx += 1
             if idx > len(broll_clips) * 2:
                 break

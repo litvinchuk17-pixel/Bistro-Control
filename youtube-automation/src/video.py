@@ -1,7 +1,28 @@
+import platform
+import subprocess
 from pathlib import Path
 
 TARGET_SIZE = (1920, 1080)
 FPS = 30
+
+
+def _detect_codec():
+    """Use h264_videotoolbox on Apple Silicon, libx264 elsewhere."""
+    if platform.system() != "Darwin":
+        return "libx264"
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True, text=True, timeout=10
+        ).stdout
+        if "h264_videotoolbox" in out:
+            return "h264_videotoolbox"
+    except Exception:
+        pass
+    return "libx264"
+
+
+CODEC = _detect_codec()
 
 
 def _subtitle_clips(words: list, duration: float):
@@ -89,15 +110,27 @@ def assemble_video(broll_clips: list, audio_path: Path, words: list, output_path
         bgm = AFC(str(bgm_path)).subclip(0, total).volumex(0.07)
         final = final.set_audio(CompositeAudioClip([audio, bgm]))
 
-    final.write_videofile(
-        str(output_path),
-        fps=FPS,
-        codec="libx264",
-        audio_codec="aac",
-        preset="medium",
-        threads=4,
-        logger=None,
-    )
+    if CODEC == "h264_videotoolbox":
+        print(f"  Using Apple Silicon hardware encoder (h264_videotoolbox)")
+        final.write_videofile(
+            str(output_path),
+            fps=FPS,
+            codec=CODEC,
+            audio_codec="aac",
+            threads=4,
+            logger=None,
+            ffmpeg_params=["-b:v", "8000k", "-pix_fmt", "yuv420p"],
+        )
+    else:
+        final.write_videofile(
+            str(output_path),
+            fps=FPS,
+            codec=CODEC,
+            audio_codec="aac",
+            preset="medium",
+            threads=4,
+            logger=None,
+        )
 
     for c in bg_clips:
         try:

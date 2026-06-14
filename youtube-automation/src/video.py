@@ -2,6 +2,11 @@ import platform
 import subprocess
 from pathlib import Path
 
+# moviepy 1.0.3 uses PIL.Image.ANTIALIAS removed in Pillow 10 — patch it
+from PIL import Image as _PILImage
+if not hasattr(_PILImage, "ANTIALIAS"):
+    _PILImage.ANTIALIAS = _PILImage.LANCZOS
+
 TARGET_SIZE = (1920, 1080)
 FPS = 30
 

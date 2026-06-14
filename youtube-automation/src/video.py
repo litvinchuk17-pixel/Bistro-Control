@@ -175,22 +175,15 @@ def assemble_video(broll_clips: list, audio_path: Path, words: list,
         while current < total:
             path = broll_clips[idx % len(broll_clips)]
             try:
-                c = VideoFileClip(str(path)).without_audio()
-                w, h = c.size
-                scale = max(TARGET_SIZE[0] / w, TARGET_SIZE[1] / h)
-                new_w = int(w * scale)
-                new_h = int(h * scale)
-                c = c.resize((new_w, new_h))
-                c = c.crop(
-                    x_center=new_w / 2, y_center=new_h / 2,
-                    width=TARGET_SIZE[0], height=TARGET_SIZE[1],
-                )
-                c = c.set_duration(c.duration)
+                # Clips are already 1920x1080 from ffmpeg transcode — no resize needed
+                c = VideoFileClip(str(path), audio=False)
+                dur = c.duration
                 remaining = total - current
-                if c.duration > remaining:
+                if dur > remaining:
                     c = c.subclip(0, remaining)
+                    dur = remaining
                 bg_clips.append(c.set_start(current))
-                current += c.duration
+                current += dur
             except Exception as e:
                 print(f"  Clip error ({path.name}): {e}")
             idx += 1

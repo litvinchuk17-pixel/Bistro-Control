@@ -83,16 +83,23 @@ def _download(url: str, path: Path) -> bool:
         return False
 
 
-def _transcode(src: Path, dst: Path) -> bool:
-    """Re-encode with cinematic color grade baked in via ffmpeg."""
+def _transcode(src: Path, dst: Path, size: tuple = (1920, 1080)) -> bool:
+    """Resize to exact target + cinematic grade. moviepy won't need to resize at all."""
+    w, h = size
+    vf = (
+        f"scale={w}:{h}:force_original_aspect_ratio=increase,"
+        f"crop={w}:{h},"
+        f"colorchannelmixer=rr=1.06:bb=0.88,"
+        f"eq=brightness=-0.12:saturation=1.1"
+    )
     result = subprocess.run(
         ["ffmpeg", "-i", str(src),
-         "-vf", "colorchannelmixer=rr=1.06:bb=0.88,eq=brightness=-0.12:saturation=1.1",
+         "-vf", vf,
          "-c:v", "libx264", "-preset", "ultrafast",
          "-pix_fmt", "yuv420p", "-an",
          "-y", str(dst)],
         capture_output=True,
-        timeout=120,
+        timeout=180,
     )
     return result.returncode == 0
 

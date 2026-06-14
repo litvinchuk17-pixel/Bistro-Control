@@ -48,7 +48,7 @@ def _get_font(size: int):
     return ImageFont.load_default()
 
 
-def _make_subtitle_clip(text: str, duration: float, start: float):
+def _make_subtitle_clip(text: str, duration: float, start: float, highlight_last: bool = False):
     """PIL-based subtitle — no ImageMagick required."""
     from moviepy.editor import ImageClip
 
@@ -61,9 +61,9 @@ def _make_subtitle_clip(text: str, duration: float, start: float):
 
     # Word-wrap
     dummy = ImageDraw.Draw(_PILImage.new("RGB", (W, 10)))
-    words = text.split()
+    word_list = text.split()
     lines, line = [], []
-    for word in words:
+    for word in word_list:
         line.append(word)
         if dummy.textbbox((0, 0), " ".join(line), font=font)[2] > MAX_W and len(line) > 1:
             line.pop()
@@ -78,14 +78,34 @@ def _make_subtitle_clip(text: str, duration: float, start: float):
     img = _PILImage.new("RGBA", (W, total_h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
+    last_word = word_list[-1] if highlight_last and word_list else None
+
     y = PAD
-    for ln in lines:
+    for li, ln in enumerate(lines):
+        is_last_line = (li == len(lines) - 1)
         bb = draw.textbbox((0, 0), ln, font=font)
         x = (W - (bb[2] - bb[0])) // 2
-        # Shadow (multiple offsets for thickness)
-        for dx, dy in [(-2, 2), (2, 2), (-2, -2), (2, -2), (0, 3)]:
-            draw.text((x + dx, y + dy), ln, fill=(0, 0, 0, 210), font=font)
-        draw.text((x, y), ln, fill=(255, 255, 255, 255), font=font)
+
+        if highlight_last and is_last_line and last_word and ln.endswith(last_word):
+            ln_words = ln.split()
+            if len(ln_words) > 1:
+                prefix = " ".join(ln_words[:-1]) + " "
+                prefix_w = draw.textbbox((0, 0), prefix, font=font)[2]
+                for dx, dy in [(-2, 2), (2, 2), (-2, -2), (2, -2), (0, 3)]:
+                    draw.text((x + dx, y + dy), prefix, fill=(0, 0, 0, 210), font=font)
+                draw.text((x, y), prefix, fill=(255, 255, 255, 255), font=font)
+                x_hw = x + prefix_w
+                for dx, dy in [(-2, 2), (2, 2), (-2, -2), (2, -2), (0, 3)]:
+                    draw.text((x_hw + dx, y + dy), last_word, fill=(0, 0, 0, 210), font=font)
+                draw.text((x_hw, y), last_word, fill=(255, 215, 0, 255), font=font)
+            else:
+                for dx, dy in [(-2, 2), (2, 2), (-2, -2), (2, -2), (0, 3)]:
+                    draw.text((x + dx, y + dy), ln, fill=(0, 0, 0, 210), font=font)
+                draw.text((x, y), ln, fill=(255, 215, 0, 255), font=font)
+        else:
+            for dx, dy in [(-2, 2), (2, 2), (-2, -2), (2, -2), (0, 3)]:
+                draw.text((x + dx, y + dy), ln, fill=(0, 0, 0, 210), font=font)
+            draw.text((x, y), ln, fill=(255, 255, 255, 255), font=font)
         y += LINE_H
 
     arr = np.array(img)
@@ -103,27 +123,32 @@ def _make_subtitle_clip(text: str, duration: float, start: float):
 
 
 def _subtitle_clips(words: list, duration: float):
+    """Kinetic text: each word appears one by one, new word highlighted in gold."""
     clips = []
-    chunk, group = [], []
+    CHUNK = 5
+    groups = []
+    group = []
     for w in words:
         group.append(w)
-        if len(group) >= 6:
-            chunk.append(group)
+        if len(group) >= CHUNK:
+            groups.append(group)
             group = []
     if group:
-        chunk.append(group)
+        groups.append(group)
 
-    for g in chunk:
-        text = " ".join(w["word"] for w in g)
-        start = g[0]["start"]
-        end = min(g[-1]["start"] + g[-1]["duration"], duration)
-        dur = end - start
-        if dur <= 0:
-            continue
-        try:
-            clips.append(_make_subtitle_clip(text, dur, start))
-        except Exception as e:
-            print(f"  subtitle error: {e}")
+    for g in groups:
+        group_end = min(g[-1]["start"] + g[-1]["duration"] + 0.3, duration)
+        for n in range(len(g)):
+            word_start = g[n]["start"]
+            word_end = g[n + 1]["start"] if n + 1 < len(g) else group_end
+            dur = word_end - word_start
+            if dur < 0.05:
+                continue
+            partial = " ".join(w["word"] for w in g[:n + 1])
+            try:
+                clips.append(_make_subtitle_clip(partial, dur, word_start, highlight_last=True))
+            except Exception as e:
+                print(f"  subtitle error: {e}")
     return clips
 
 

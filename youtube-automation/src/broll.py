@@ -84,8 +84,10 @@ def _download(url: str, path: Path) -> bool:
 
 
 def _transcode(src: Path, dst: Path) -> bool:
+    """Re-encode with cinematic color grade baked in via ffmpeg."""
     result = subprocess.run(
         ["ffmpeg", "-i", str(src),
+         "-vf", "colorchannelmixer=rr=1.06:bb=0.88,eq=brightness=-0.12:saturation=1.1",
          "-c:v", "libx264", "-preset", "ultrafast",
          "-pix_fmt", "yuv420p", "-an",
          "-y", str(dst)],

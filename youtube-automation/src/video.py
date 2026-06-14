@@ -108,7 +108,7 @@ def assemble_video(broll_clips: list, audio_path: Path, words: list, output_path
             except Exception as e:
                 print(f"  Clip load error ({path.name}): {e}")
             idx += 1
-            if idx > len(broll_clips) * 2:
+            if idx > 500:  # safety cap
                 break
 
     if not bg_clips:

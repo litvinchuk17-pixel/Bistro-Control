@@ -650,8 +650,17 @@ def render(frame_fn: FrameFn, duration: float, output: str,
     from moviepy import VideoClip
     print(f"Rendering {duration:.1f}s → {output}")
     clip = VideoClip(frame_fn, duration=duration)
-    clip.write_videofile(output, fps=fps, codec="libx264", audio=False,
-                         preset=preset, ffmpeg_params=["-crf", str(crf)],
-                         logger="bar")
+    clip.write_videofile(
+        output, fps=fps, codec="libx264", audio=False,
+        preset=preset,
+        ffmpeg_params=[
+            "-crf", str(crf),
+            "-pix_fmt", "yuv420p",       # QuickTime / iOS / macOS compatible
+            "-movflags", "+faststart",    # streaming-friendly, fixes moov atom
+            "-profile:v", "high",
+            "-level", "4.0",
+        ],
+        logger="bar",
+    )
     size_mb = os.path.getsize(output) / 1e6
     print(f"Done  {size_mb:.1f} MB → {output}")

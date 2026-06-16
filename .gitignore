@@ -1,0 +1,6 @@
+
+# Generated video files and binaries
+*.mp4
+*.webp
+*.deb
+__pycache__/

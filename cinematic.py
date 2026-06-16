@@ -14,10 +14,12 @@ Frame    = np.ndarray   # shape (H, W, 3), dtype uint8
 FrameFn  = Callable[[float], Frame]   # t → frame
 
 # ─── CONSTANTS ─────────────────────────────────────────────────────
-FONT_SANS      = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
-FONT_SANS_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
-FONT_SERIF     = "/usr/share/fonts/truetype/freefont/FreeSerif.ttf"
-FONT_SERIF_IT  = "/usr/share/fonts/truetype/freefont/FreeSerifItalic.ttf"
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_FONTS = os.path.join(_HERE, "fonts")
+FONT_SANS      = os.path.join(_FONTS, "LiberationSans-Regular.ttf")
+FONT_SANS_BOLD = os.path.join(_FONTS, "LiberationSans-Bold.ttf")
+FONT_SERIF     = os.path.join(_FONTS, "FreeSerif.ttf")
+FONT_SERIF_IT  = os.path.join(_FONTS, "FreeSerifItalic.ttf")
 
 
 # ══════════════════════════════════════════════════════════════════

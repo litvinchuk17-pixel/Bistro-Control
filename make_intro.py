@@ -16,7 +16,8 @@ from cinematic import (
 
 W, H   = 1280, 536
 FPS    = 24
-OUTPUT = "/home/user/Bistro-Control/buffett_intro.mp4"
+import os as _os
+OUTPUT = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "buffett_intro.mp4")
 
 # ─── COLOR PALETTE ─────────────────────────────────────────────────
 SKY_COLD_TOP  = (58,  68,  88)

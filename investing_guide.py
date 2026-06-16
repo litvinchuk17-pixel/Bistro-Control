@@ -14,9 +14,11 @@ from cinematic import (
     FONT_SANS, FONT_SANS_BOLD, FONT_SERIF_IT,
 )
 
+import os as _os
 W, H   = 1280, 536
 FPS    = 24
-OUTPUT = "/home/user/Bistro-Control/investing_guide_20min.mp4"
+OUTPUT = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                       "investing_guide_20min.mp4")
 
 # ─── FONTS ─────────────────────────────────────────────────────────
 def _font(path, size):

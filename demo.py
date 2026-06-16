@@ -15,7 +15,8 @@ from cinematic import (
 )
 
 W, H   = 1280, 536
-OUTPUT = "/home/user/Bistro-Control/demo_cinematic.mp4"
+import os as _os
+OUTPUT = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "demo_cinematic.mp4")
 
 rng    = np.random.default_rng(7)
 GRAIN  = rng.normal(0, 1.0, (H, W, 3)).astype(np.float32)

@@ -17,10 +17,11 @@ from cinematic import (
 
 W, H   = 1280, 536
 FPS    = 24
-OUTPUT = "/home/user/Bistro-Control/act1_hook.mp4"
+import os as _os
+OUTPUT = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "act1_hook.mp4")
 
-PHOTO_CRASH   = "/home/user/Bistro-Control/photo_1.webp"   # NYSE crash scene
-PHOTO_DALIO   = "/home/user/Bistro-Control/photo_2.webp"   # Ray Dalio portrait
+PHOTO_CRASH   = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "photo_1.webp")
+PHOTO_DALIO   = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "photo_2.webp")
 
 rng   = np.random.default_rng(17)
 GRAIN = rng.normal(0, 1.0, (H, W, 3)).astype(np.float32)

@@ -2,5 +2,8 @@
 # Generated video files and binaries
 *.mp4
 *.webp
+*.jpg
+*.jpeg
+*.png
 *.deb
 __pycache__/

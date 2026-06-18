@@ -759,6 +759,222 @@ CRISIS_CAPS=[
 ]
 
 
+# ════════ VISUAL INSERTS ═══════════════════════════════════════
+
+def newspaper_insert(headline, subhead, date, source, duration):
+    """Aged newspaper clipping — NYT/Bloomberg style."""
+    f_src  = _lf(FONT_SANS_BOLD, 13)
+    f_date = _lf(FONT_SANS,      12)
+    f_head = _lf(FONT_SERIF_IT,  48)
+    f_sub  = _lf(FONT_SANS,      20)
+    f_body = _lf(FONT_SANS,      15)
+
+    PAPER  = (235, 225, 200)   # aged newsprint
+    INK    = ( 22,  18,  12)   # dark ink
+    REDINK = (180,  30,  30)
+
+    # Pre-render to PIL
+    img = Image.new("RGB", (W, H), (20, 18, 14))
+    d   = ImageDraw.Draw(img)
+
+    # Paper rectangle (center)
+    px1, py1, px2, py2 = 60, 30, W-60, H-30
+    d.rectangle([px1-2, py1-2, px2+2, py2+2], fill=(150, 140, 120))
+    d.rectangle([px1, py1, px2, py2], fill=PAPER)
+
+    # Newspaper name header
+    d.rectangle([px1, py1, px2, py1+42], fill=INK)
+    sb = d.textbbox((0,0), source, font=f_src)
+    sw = sb[2]-sb[0]
+    d.text(((W-sw)//2, py1+12), source, font=f_src, fill=PAPER)
+
+    # Date line
+    d.text((px1+14, py1+48), date, font=f_date, fill=(100,90,75))
+    d.line([px1+10, py1+64, px2-10, py1+64], fill=(150,140,120), width=1)
+    d.line([px1+10, py1+67, px2-10, py1+67], fill=(150,140,120), width=1)
+
+    # Headline (serif, large)
+    # Wrap headline
+    words = headline.split()
+    lines2, cur = [], ""
+    for w in words:
+        test = (cur+" "+w).strip()
+        bb = d.textbbox((0,0), test, font=f_head)
+        if bb[2]-bb[0] <= px2-px1-28: cur = test
+        else:
+            if cur: lines2.append(cur)
+            cur = w
+    if cur: lines2.append(cur)
+    lh = 54; hy = py1 + 80
+    for line in lines2:
+        d.text((px1+14, hy), line, font=f_head, fill=INK)
+        hy += lh
+
+    # Subhead
+    d.line([px1+10, hy+6, px2-10, hy+6], fill=(150,140,120), width=1)
+    d.text((px1+14, hy+12), subhead, font=f_sub, fill=(60,50,40))
+
+    # Body text (fake columns — gray lines)
+    col_y = hy + 45
+    col_h = py2 - col_y - 20
+    for col_x in [px1+14, px1+(px2-px1)//2+10]:
+        for row in range(0, col_h, 18):
+            lw2 = int(np.random.default_rng(col_x+row).integers(100, (px2-px1)//2-30))
+            d.line([col_x, col_y+row, col_x+lw2, col_y+row], fill=(160,150,130), width=1)
+
+    static_arr = np.array(img)
+
+    def frame(t):
+        base = static_arr.copy().astype(np.float32)
+        # Subtle paper grain
+        paper_grain = np.random.default_rng(int(t*12)%500).normal(0,4,(H,W,3)).astype(np.float32)
+        base = np.clip(base + paper_grain, 0, 255)
+        # Vignette
+        base[:,:,0]*=VIG; base[:,:,1]*=VIG; base[:,:,2]*=VIG
+        fi = ease(min(t/0.5,1.0)); fo = ease(min((duration-t)/0.5,1.0))
+        return np.clip(base*min(fi,fo), 0, 255).astype(np.uint8)
+
+    return frame
+
+
+def bloomberg_terminal(symbol, price, change_pct, extra_lines, duration):
+    """Bloomberg terminal style — green on black."""
+    f_sym  = _lf(FONT_SANS_BOLD, 52)
+    f_prc  = _lf(FONT_SANS_BOLD, 88)
+    f_chg  = _lf(FONT_SANS_BOLD, 46)
+    f_lbl  = _lf(FONT_SANS,      16)
+    f_ext  = _lf(FONT_SANS,      18)
+
+    BLM_BG  = (  8,  10,  8)
+    BLM_GRN = ( 50, 220, 80)
+    BLM_RED = (220,  50, 50)
+    BLM_DIM = ( 80, 100, 80)
+    BLM_BDR = ( 30,  45, 30)
+
+    chg_col = BLM_GRN if not change_pct.startswith("-") else BLM_RED
+    sign    = "▲" if not change_pct.startswith("-") else "▼"
+
+    def frame(t):
+        arr = np.full((H,W,3), BLM_BG, dtype=np.float32)
+        # Grid lines
+        for gy in range(0, H, 40):
+            arr[gy:gy+1] = np.array(BLM_BDR, dtype=np.float32)
+        for gx in range(0, W, 80):
+            arr[:, gx:gx+1] = np.array(BLM_BDR, dtype=np.float32)
+
+        # Top bar
+        arr[0:40] = np.array([15,22,15], dtype=np.float32)
+
+        img = Image.fromarray(arr.astype(np.uint8))
+        d   = ImageDraw.Draw(img)
+
+        # Header
+        d.text((18, 8), "BLOOMBERG TERMINAL", font=f_lbl, fill=BLM_DIM)
+        ts_txt = "LIVE  " + ("▐"*int((t*4)%5))
+        d.text((W-140, 8), ts_txt, font=f_lbl, fill=BLM_GRN)
+
+        p1 = ease(min(t/0.4, 1.0))
+        p2 = ease(min(max((t-0.5)/0.4,0),1.0))
+        p3 = ease(min(max((t-0.9)/0.4,0),1.0))
+
+        # Symbol
+        if p1>0.01:
+            d.text((60+2, 68+2), symbol, font=f_sym, fill=(0,0,0,180))
+            d.text((60, 68), symbol, font=f_sym, fill=(*BLM_GRN, int(255*p1)))
+
+        # Price
+        if p2>0.01:
+            pb = d.textbbox((0,0), price, font=f_prc)
+            px = (W-(pb[2]-pb[0]))//2
+            d.text((px+3, 140+3), price, font=f_prc, fill=(0,0,0,180))
+            d.text((px, 140), price, font=f_prc, fill=(*chg_col, int(255*p2)))
+
+        # Change
+        if p3>0.01:
+            chg_txt = f"{sign} {change_pct}"
+            cb2 = d.textbbox((0,0), chg_txt, font=f_chg)
+            cx2 = (W-(cb2[2]-cb2[0]))//2
+            d.text((cx2, 250), chg_txt, font=f_chg, fill=(*chg_col, int(255*p3)))
+
+        # Extra lines
+        for i, (lbl2, val2, col2) in enumerate(extra_lines):
+            ep = ease(min(max((t-1.2-i*0.3)/0.4,0),1.0))
+            if ep<0.01: continue
+            ey = 330+i*38
+            d.text((60, ey), lbl2, font=f_ext, fill=BLM_DIM)
+            vb2 = d.textbbox((0,0), val2, font=f_ext)
+            d.text((W-60-(vb2[2]-vb2[0]), ey), val2, font=f_ext, fill=(*col2[:3], int(255*ep)))
+
+        # Scanline flicker
+        fl = 1.0+0.03*math.sin(t*60*math.pi)
+        result = np.array(img).astype(np.float32)*fl
+        result = np.clip(result+GRAIN*3.5, 0, 255)
+        fi = ease(min(t/0.4,1.0)); fo = ease(min((duration-t)/0.4,1.0))
+        return np.clip(result*min(fi,fo), 0, 255).astype(np.uint8)
+
+    return frame
+
+
+def breaking_news(headline, ticker, color, duration):
+    """CNN/BBC breaking news lower-third style."""
+    f_brk  = _lf(FONT_SANS_BOLD, 18)
+    f_head = _lf(FONT_SANS_BOLD, 34)
+    f_tick = _lf(FONT_SANS,      16)
+    f_chan = _lf(FONT_SANS_BOLD, 14)
+
+    # Pre-render background scene (dark news studio abstract)
+    def frame(t):
+        arr = np.full((H,W,3), (8,8,14), dtype=np.float32)
+        # Animated light sweep
+        sweep = (t*0.15)%1.0; cx2 = int(sweep*W*1.4-W*0.2)
+        dist2 = np.sqrt(((_x-cx2)/(W*0.45))**2+((_y-H//2)/(H*0.6))**2)
+        glow = np.clip(1.0-dist2*1.2, 0, 1)*0.12
+        arr[:,:,0]+=glow*color[0]; arr[:,:,1]+=glow*color[1]; arr[:,:,2]+=glow*color[2]
+
+        img = Image.fromarray(np.clip(arr,0,255).astype(np.uint8))
+        d   = ImageDraw.Draw(img)
+
+        # Lower-third band (appears after 0.3s)
+        band_p = ease(min(max((t-0.3)/0.4,0),1.0))
+        if band_p > 0.01:
+            band_y = int(H*0.72)
+            # Slide in from left
+            band_w = int(W * band_p)
+
+            # Main band
+            d.rectangle([0, band_y, band_w, band_y+58], fill=(*color[:3],))
+            # Dark strip below
+            d.rectangle([0, band_y+58, band_w, band_y+90], fill=(15,15,20))
+            # BREAKING badge
+            brk_p = ease(min(max((t-0.5)/0.3,0),1.0))
+            if brk_p > 0.01:
+                d.rectangle([0, band_y, 160, band_y+58], fill=(200,30,30))
+                brkb = d.textbbox((0,0),"BREAKING",font=f_brk)
+                d.text(((160-(brkb[2]-brkb[0]))//2, band_y+12),
+                       "BREAKING", font=f_brk, fill=(255,255,255))
+                d.text(((160-(brkb[2]-brkb[0]))//2, band_y+32),
+                       "NEWS", font=f_brk, fill=(255,255,255))
+
+                # Headline
+                hp = ease(min(max((t-0.7)/0.4,0),1.0))
+                if hp > 0.01:
+                    d.text((172, band_y+12), headline, font=f_head, fill=(255,255,255))
+
+                # Scrolling ticker
+                scroll_x = int(W - (t-0.3)*220 % (W+800))
+                tick_p = ease(min(max((t-1.0)/0.4,0),1.0))
+                if tick_p > 0.01:
+                    d.text((scroll_x, band_y+62), ticker*4, font=f_tick, fill=(200,200,200))
+
+        result = np.array(img).astype(np.float32)
+        result = np.clip(result+GRAIN*4.5,0,255)
+        result[:,:,0]*=VIG; result[:,:,1]*=VIG; result[:,:,2]*=VIG
+        fi = ease(min(t/0.4,1.0)); fo = ease(min((duration-t)/0.4,1.0))
+        return np.clip(result*min(fi,fo), 0, 255).astype(np.uint8)
+
+    return frame
+
+
 # ════════ BUILD TIMELINE ════════════════════════════════════════
 tl = Timeline(W=W, H=H)
 
@@ -775,9 +991,9 @@ duration=9.0, transition="fade_black", transition_dur=0.5)
 tl.add_clip(split_vs(duration=12.0),
             duration=12.0, transition="dissolve", transition_dur=0.6)
 
-# ── CTA #1 ──────────────────────────────────────────────────────
-tl.add_clip(cta_scene(duration=30.0, is_final=False),
-            duration=30.0, transition="fade_black", transition_dur=0.5)
+# ── CTA #1 (коротка) ────────────────────────────────────────────
+tl.add_clip(cta_scene(duration=14.0, is_final=False),
+            duration=14.0, transition="fade_black", transition_dur=0.5)
 
 # ── ACT 2 ───────────────────────────────────────────────────────
 tl.add_clip(act_header(2,"ДВІ РЕЛІГІЇ",CB,duration=6.0),
@@ -788,6 +1004,15 @@ tl.add_clip(
     profile_scene(PHOTO_B,"WARREN BUFFETT","Berkshire Hathaway",
                   CB,B_CAPS,42.0,1.0,1.08,(0.5,0.5),(0.53,0.52)),
     duration=42.0, transition="burn", transition_dur=0.8)
+
+# ── BLOOMBERG INSERT — Berkshire ────────────────────────────────
+tl.add_clip(bloomberg_terminal(
+    "BRK.A", "$540,000", "+19.8%/рік",
+    [("Assets Under Management", "$900B",  (200,180,80)),
+     ("Employees",               "360,000",(150,150,150)),
+     ("Founded",                 "1965 · Omaha, NE",(100,130,100))],
+    duration=9.0),
+duration=9.0, transition="flash", transition_dur=0.3)
 
 # ── BUFFETT PHILOSOPHY ──────────────────────────────────────────
 tl.add_clip(slam_text([
@@ -806,6 +1031,15 @@ tl.add_clip(
     profile_scene(PHOTO_D,"RAY DALIO","Bridgewater Associates",
                   CD,D_CAPS,42.0,1.0,1.06,(0.5,0.48),(0.5,0.52)),
     duration=42.0, transition="dissolve", transition_dur=0.8)
+
+# ── BLOOMBERG INSERT — Bridgewater ──────────────────────────────
+tl.add_clip(bloomberg_terminal(
+    "BRIDGEWATER", "$150B AUM", "+14% (2008)",
+    [("Strategy",     "All Weather Portfolio",(50,200,180)),
+     ("Clients",      "Sovereign Funds, Pensions",(150,150,150)),
+     ("Founded",      "1975 · New York, NY",(100,130,100))],
+    duration=9.0),
+duration=9.0, transition="flash", transition_dur=0.3)
 
 # ── DALIO PHILOSOPHY ────────────────────────────────────────────
 tl.add_clip(slam_text([
@@ -830,11 +1064,27 @@ tl.add_clip(comparison_table(duration=55.0),
 tl.add_clip(act_header(3,"МОМЕНТ ІСТИНИ — 2008",RED,duration=6.0),
             duration=6.0, transition="flash", transition_dur=0.35)
 
+# ── NEWSPAPER INSERT ────────────────────────────────────────────
+tl.add_clip(newspaper_insert(
+    "\"Buy American. I Am.\"",
+    "Buffett calls the bottom while the world panics",
+    "THE NEW YORK TIMES, October 17, 2008",
+    "THE NEW YORK TIMES",
+    duration=9.0),
+duration=9.0, transition="dissolve", transition_dur=0.6)
+
 # ── 2008 CRISIS ─────────────────────────────────────────────────
 tl.add_clip(
     profile_scene(PHOTO_B,"2008 — КРИЗА","Хто пройшов перевірку?",
                   RED,CRISIS_CAPS,42.0,1.0,1.05,(0.5,0.5),(0.5,0.5),do_vhs=True),
     duration=42.0, transition="dissolve", transition_dur=0.7)
+
+# ── BREAKING NEWS ───────────────────────────────────────────────
+tl.add_clip(breaking_news(
+    "S&P 500 CRASHES -37% IN 2008",
+    "  DOW JONES -33.8%  ·  NASDAQ -40.5%  ·  LEHMAN BROTHERS BANKRUPT  ·  ",
+    RED, duration=8.0),
+duration=8.0, transition="cut", transition_dur=0.0)
 
 tl.add_clip(impact_split(
     "2008 — РЕЗУЛЬТАТИ",
@@ -870,9 +1120,9 @@ tl.add_clip(act_header(5,"ФІНАЛЬНИЙ ВИРОК",GRN,duration=6.0),
 tl.add_clip(verdict_scene(duration=55.0),
             duration=55.0, transition="dissolve", transition_dur=0.7)
 
-# ── FINAL CTA ───────────────────────────────────────────────────
-tl.add_clip(cta_scene(duration=40.0, is_final=True),
-            duration=40.0, transition="fade_black", transition_dur=0.6)
+# ── FINAL CTA (коротка) ─────────────────────────────────────────
+tl.add_clip(cta_scene(duration=18.0, is_final=True),
+            duration=18.0, transition="fade_black", transition_dur=0.6)
 
 # ── OUTRO ───────────────────────────────────────────────────────
 tl.add_title(

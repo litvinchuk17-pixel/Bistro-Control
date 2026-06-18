@@ -3,31 +3,32 @@
 Генератор голосу для bvd_v2.mp4
 Запусти на своєму Mac: python3 generate_voice.py
 
-Вимоги (встановлюються автоматично):
-  pip install edge-tts pydub
+Вимоги:
+  pip install edge-tts imageio-ffmpeg
 
 Після запуску: voice_track.mp3 з'явиться в папці.
 Потім: python3 add_voice.py   ← з'єднає голос з відео.
 """
-import asyncio, os, sys
+import asyncio, os, subprocess, sys
 
-# Auto-install
+# Auto-install edge-tts
 try:
     import edge_tts
 except ImportError:
     os.system("pip install edge-tts -q")
     import edge_tts
 
+# Auto-install imageio-ffmpeg for bundled ffmpeg binary
+try:
+    import imageio_ffmpeg
+    _FF = imageio_ffmpeg.get_ffmpeg_exe()
+except Exception:
+    _FF = "ffmpeg"
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
-# ── VOICE ─────────────────────────────────────────────────────
-# uk-UA-PolinaNeural  — жіночий, спокійний
-# uk-UA-OstapNeural   — чоловічий, впевнений  ← документальний стиль
 VOICE = "uk-UA-OstapNeural"
 
-# ── NARRATION SCRIPT ──────────────────────────────────────────
-# Кожен сегмент: (пауза перед текстом в секундах, текст)
-# Паузи синхронізовані з відео (приблизно)
 SEGMENTS = [
     # HOOK (0:00)
     (1.0,  "Два чоловіки."),
@@ -140,39 +141,94 @@ SEGMENTS = [
     (1.5,  "До зустрічі."),
 ]
 
+
 async def generate():
     print(f"Voice: {VOICE}")
     all_parts = []
 
     for i, (pause, text) in enumerate(SEGMENTS):
-        out = _os.path.join(_HERE, f"_voice_{i:03d}.mp3")
-        print(f"  [{i+1}/{len(SEGMENTS)}] {text[:50]}...")
-        comm = edge_tts.Communicate(text, VOICE, rate="-5%", pitch="-3Hz")
-        await comm.save(out)
+        out = os.path.join(_HERE, f"_voice_{i:03d}.mp3")
+        if os.path.exists(out):
+            print(f"  [{i+1}/{len(SEGMENTS)}] skip (exists): {text[:45]}...")
+        else:
+            print(f"  [{i+1}/{len(SEGMENTS)}] {text[:45]}...")
+            comm = edge_tts.Communicate(text, VOICE, rate="-5%", pitch="-3Hz")
+            await comm.save(out)
         all_parts.append((pause, out))
 
-    print("Merging segments...")
+    print("Merging segments with FFmpeg...")
     _merge(all_parts)
-    print(f"✓ voice_track.mp3 ready")
+
+
+def _make_silence(duration_s, out_path):
+    """Generate a silent MP3 of given duration using FFmpeg."""
+    subprocess.run([
+        _FF, "-y",
+        "-f", "lavfi",
+        "-i", "anullsrc=r=24000:cl=mono",
+        "-t", str(duration_s),
+        "-c:a", "libmp3lame", "-b:a", "128k",
+        out_path
+    ], check=True, capture_output=True)
+
 
 def _merge(parts):
-    try:
-        from pydub import AudioSegment
-        from pydub.generators import Sine
-    except ImportError:
-        os.system("pip install pydub -q")
-        from pydub import AudioSegment
+    tmp_files = []
+    concat_entries = []
 
-    result = AudioSegment.silent(duration=500)  # 0.5s lead-in
-    for (pause_s, path) in parts:
-        silence = AudioSegment.silent(duration=int(pause_s * 1000))
-        seg     = AudioSegment.from_mp3(path)
-        result += silence + seg
-        os.remove(path)
+    # 0.5s lead-in silence
+    lead = os.path.join(_HERE, "_sil_lead.mp3")
+    _make_silence(0.5, lead)
+    tmp_files.append(lead)
+    concat_entries.append(lead)
+
+    for i, (pause_s, path) in enumerate(parts):
+        if pause_s > 0.01:
+            sil = os.path.join(_HERE, f"_sil_{i:03d}.mp3")
+            _make_silence(pause_s, sil)
+            tmp_files.append(sil)
+            concat_entries.append(sil)
+        concat_entries.append(path)
+
+    # Write concat list
+    concat_txt = os.path.join(_HERE, "_concat.txt")
+    with open(concat_txt, "w") as f:
+        for entry in concat_entries:
+            f.write(f"file '{entry}'\n")
+    tmp_files.append(concat_txt)
 
     out_path = os.path.join(_HERE, "voice_track.mp3")
-    result.export(out_path, format="mp3", bitrate="128k")
-    print(f"Duration: {len(result)/1000:.1f}s")
+    result = subprocess.run([
+        _FF, "-y",
+        "-f", "concat", "-safe", "0",
+        "-i", concat_txt,
+        "-ar", "44100",
+        "-c:a", "libmp3lame", "-b:a", "128k",
+        out_path
+    ], capture_output=True, text=True)
 
-_os = os
+    if result.returncode != 0:
+        print(f"FFmpeg error:\n{result.stderr[-800:]}")
+        raise RuntimeError("FFmpeg concat failed")
+
+    # Cleanup temp silences and concat list
+    for f in tmp_files:
+        if os.path.exists(f):
+            os.remove(f)
+    # Cleanup voice segment files
+    for _, path in parts:
+        if os.path.exists(path):
+            os.remove(path)
+
+    # Get duration via ffprobe
+    probe = subprocess.run(
+        [_FF, "-i", out_path],
+        capture_output=True, text=True
+    )
+    dur_line = [l for l in probe.stderr.splitlines() if "Duration" in l]
+    duration = dur_line[0].split("Duration:")[1].split(",")[0].strip() if dur_line else "?"
+    print(f"✓ voice_track.mp3 ready  (duration: {duration})")
+    print(f"  Next: python3 add_voice.py")
+
+
 asyncio.run(generate())

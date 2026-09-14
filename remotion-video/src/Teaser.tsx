@@ -142,7 +142,9 @@ const BeatContent: React.FC<{ beat: Beat }> = ({ beat }) => {
       />
       <Vignette
         strength={0.5}
-        bottomFade={beat.startSeconds === 25.5 ? 0.85 : 0}
+        bottomFade={beat.startSeconds === 25.5 ? 1 : 0}
+        bottomFadeStart={beat.startSeconds === 25.5 ? 67 : 65}
+        bottomFadeRamp={beat.startSeconds === 25.5 ? 7 : 15}
       />
       {beat.text && (
         <AbsoluteFill style={{ opacity: interpolate(frame, [textDelay, textDelay + 12], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) }}>

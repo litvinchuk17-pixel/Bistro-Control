@@ -4,7 +4,9 @@ import { AbsoluteFill } from "remotion";
 export const Vignette: React.FC<{
   strength?: number;
   bottomFade?: number;
-}> = ({ strength = 0.55, bottomFade = 0 }) => {
+  bottomFadeStart?: number;
+  bottomFadeRamp?: number;
+}> = ({ strength = 0.55, bottomFade = 0, bottomFadeStart = 65, bottomFadeRamp = 15 }) => {
   return (
     <AbsoluteFill style={{ pointerEvents: "none" }}>
       <AbsoluteFill
@@ -15,7 +17,7 @@ export const Vignette: React.FC<{
       {bottomFade > 0 && (
         <AbsoluteFill
           style={{
-            background: `linear-gradient(to bottom, rgba(0,0,0,0) 65%, rgba(0,0,0,${bottomFade}) 100%)`,
+            background: `linear-gradient(to bottom, rgba(0,0,0,0) ${bottomFadeStart}%, rgba(0,0,0,${bottomFade}) ${Math.min(bottomFadeStart + bottomFadeRamp, 99)}%, rgba(0,0,0,${bottomFade}) 100%)`,
           }}
         />
       )}
